@@ -59,16 +59,23 @@ jobs:
       - name: Check migration and backend startup
         run: |
           for i in {1..30}; do
-            if docker compose ps backend | grep -q "Up"; then
-              if docker compose logs backend 2>&1 \
-                | grep -q "RefundIQ API is running."; then
-                echo "Backend startup detected"
-                exit 0
-              fi
+            if docker compose logs backend 2>&1 \
+              | grep -q "RefundIQ API running on port 5000"; then
+              echo "Backend startup detected"
+              exit 0
             fi
+
+            if [ "$(docker compose inspect -f '{{.State.Status}}' backend)" = "exited" ]; then
+              echo "Backend container exited unexpectedly"
+              docker compose logs backend
+              exit 1
+            fi
+
+            echo "Waiting for backend..."
             sleep 2
           done
 
+          echo "Backend startup timed out"
           docker compose logs backend
           exit 1
 
