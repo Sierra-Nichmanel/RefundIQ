@@ -16,6 +16,10 @@ RUN npm install
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
+# Provide a build-time placeholder for Prisma config loading.
+# Docker Compose supplies the real DATABASE_URL at runtime.
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/refundiq?schema=public"
+
 # Generate Prisma Client
 RUN npx prisma generate
 
