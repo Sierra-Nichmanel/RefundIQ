@@ -1,0 +1,26 @@
+:root {
+  /* RefundIQ official brand palette — from App.css */
+  --brand-green: #16803d;
+  --brand-green-dark: #116b32;
+  --brand-green-icon: #15803d;
+  --brand-green-text: #176536;
+  --brand-green-focus: #299451;
+
+  --brand-green-light: #e4f5e9;
+  --brand-green-soft: #eaf7ee;
+  --brand-green-background: #e8f5ed;
+
+  /* Shared interface colors */
+  --brand-page: #f7f9f7;
+  --brand-surface: #ffffff;
+  --brand-text: #24352a;
+  --brand-text-heading: #14231a;
+  --brand-muted: #647067;
+  --brand-border: #e2eae3;
+
+  /* Dashboard compatibility variables */
+  --primary: var(--brand-green);
+  --primary-hover: var(--brand-green-dark);
+  --border-color: var(--brand-border);
+  --text-primary: var(--brand-text);
+}

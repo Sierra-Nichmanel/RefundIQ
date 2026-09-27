@@ -1,0 +1,73 @@
+
+services:
+  database:
+    image: postgres:16-alpine
+    container_name: refundiq-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: refundiq
+      POSTGRES_USER: refundiq_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your root .env file}
+    ports:
+      - "5433:5432"
+    volumes:
+      - refundiq_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U refundiq_user -d refundiq"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - refundiq-network
+
+  backend:
+    container_name: refundiq-backend
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      FRONTEND_URL: http://localhost:5173
+      DATABASE_URL: postgresql://refundiq_user:${POSTGRES_PASSWORD}@database:5432/refundiq?schema=public
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "5000:5000"
+    depends_on:
+      database:
+        condition: service_healthy
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             npm run dev"
+    networks:
+      - refundiq-network
+
+  frontend:
+    container_name: refundiq-frontend
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - refundiq-network
+
+volumes:
+  refundiq_postgres_data:
+
+networks:
+  refundiq-network:
+    driver: bridge

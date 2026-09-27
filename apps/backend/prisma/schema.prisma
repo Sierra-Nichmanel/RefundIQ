@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+
+  @@map("customers")
+}
+
+model Order {
+  id          String    @id @default(cuid())
+  orderNumber String    @unique
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  totalAmount Decimal   @db.Decimal(10, 2)
+  currency    String    @default("USD")
+  status      String    @default("DELIVERED")
+  isFinalSale Boolean   @default(false)
+  itemName    String
+  orderDate   DateTime
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  refundRequests RefundRequest[]
+
+  @@index([customerId])
+  @@map("orders")
+}
+
+model RefundRequest {
+  id            String  @id @default(cuid())
+  orderId       String
+  order         Order   @relation(fields: [orderId], references: [id])
+  customerEmail String
+  reason        String
+  amount        Decimal @db.Decimal(10, 2)
+
+  // Original automated policy decision
+  policyDecision String?
+  policyResult   Json?
+
+  // Current outcome: PENDING, APPROVED, DENIED, ESCALATED
+  status String @default("PENDING")
+
+  // AI analysis
+  aiClassification String?
+  aiExplanation    String?
+
+  // Administrative review
+  reviewedByAdminId String?
+  reviewedByAdmin   Admin?    @relation("RefundReviewer", fields: [reviewedByAdminId], references: [id])
+  reviewedAt        DateTime?
+  reviewNotes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([reviewedByAdminId])
+  @@map("refund_requests")
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  refundRequestId String
+  refundRequest   RefundRequest @relation(fields: [refundRequestId], references: [id])
+
+  // Null for existing/system-generated entries
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id])
+
+  action    String
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([refundRequestId])
+  @@index([adminId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("ADMIN")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviewedRefunds RefundRequest[] @relation("RefundReviewer")
+  auditLogs       AuditLog[]
+
+  @@map("admins")
+}
