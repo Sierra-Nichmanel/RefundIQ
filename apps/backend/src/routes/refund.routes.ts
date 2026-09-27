@@ -45,16 +45,6 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    const reviewRefundSchema = z.object({
-      decision: z.enum(["APPROVED", "DENIED"]),
-
-      reviewNotes: z
-        .string()
-        .trim()
-        .min(5, "Please provide a meaningful review note.")
-        .max(2000, "Review notes cannot exceed 2000 characters."),
-    });
-
     const refund = await createRefundRequest(validation.data);
 
     res.status(201).json({

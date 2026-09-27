@@ -2,7 +2,6 @@ import OpenAI from "openai";
 import { z } from "zod";
 
 import type { RefundPolicyResult } from "./refund-policy.service";
-import openai from "openai";
 
 const AIResultSchema = z.object({
   classification: z.enum([

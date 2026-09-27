@@ -79,6 +79,142 @@ jobs:
           docker compose logs backend
           exit 1
 
+      - name: Seed synthetic test data
+        run: |
+          docker compose exec -T backend npx prisma db seed
+
+      - name: Test refund API policy decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="http://localhost:5000/api"
+
+          submit_refund() {
+            local name="$1"
+            local order="$2"
+            local email="$3"
+            local reason="$4"
+            local expected_status="$5"
+
+            echo "Testing: $name"
+
+            response=$(curl --silent --show-error \
+              --write-out "\n%{http_code}" \
+              -X POST "$BASE_URL/refunds" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n \
+                --arg orderNumber "$order" \
+                --arg customerEmail "$email" \
+                --arg reason "$reason" \
+                '{orderNumber:$orderNumber,customerEmail:$customerEmail,reason:$reason}')")
+
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+
+            if [ "$http_code" != "201" ]; then
+              echo "Expected HTTP 201, received $http_code"
+              echo "$body"
+              exit 1
+            fi
+
+            actual_status=$(echo "$body" | jq -r '.data.status')
+
+            if [ "$actual_status" != "$expected_status" ]; then
+              echo "Expected $expected_status, received $actual_status"
+              echo "$body"
+              exit 1
+            fi
+
+            echo "$name passed: $actual_status"
+            echo "$body" | jq '{id: .data.id, orderNumber: .data.orderNumber, status: .data.status, aiClassification: .data.aiClassification}'
+          }
+
+          submit_refund \
+            "Damaged item approval" \
+            "RFQ-001-01" \
+            "customer01@example.com" \
+            "The headphones arrived damaged and broken." \
+            "APPROVED"
+
+          submit_refund \
+            "Old order denial" \
+            "RFQ-001-02" \
+            "customer01@example.com" \
+            "I want a refund for this order." \
+            "DENIED"
+
+          submit_refund \
+            "Final sale denial" \
+            "RFQ-003-02" \
+            "customer03@example.com" \
+            "I want to return this clearance jacket." \
+            "DENIED"
+
+          submit_refund \
+            "High-value escalation" \
+            "RFQ-002-01" \
+            "customer02@example.com" \
+            "The laptop has an issue and I need a refund." \
+            "ESCALATED"
+
+      - name: Test refund API validation and access control
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="http://localhost:5000/api"
+
+          echo "Testing invalid request validation..."
+
+          status=$(curl --silent --output /tmp/invalid.json \
+            --write-out "%{http_code}" \
+            -X POST "$BASE_URL/refunds" \
+            -H "Content-Type: application/json" \
+            -d '{"orderNumber":"","customerEmail":"invalid-email","reason":"Hi"}')
+
+          if [ "$status" != "400" ]; then
+            echo "Expected 400 for invalid input, received $status"
+            cat /tmp/invalid.json
+            exit 1
+          fi
+
+          echo "Invalid request validation passed."
+
+          echo "Testing customer/order mismatch..."
+
+          status=$(curl --silent --output /tmp/mismatch.json \
+            --write-out "%{http_code}" \
+            -X POST "$BASE_URL/refunds" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "orderNumber":"RFQ-001-01",
+              "customerEmail":"customer02@example.com",
+              "reason":"The item arrived damaged."
+            }')
+
+          if [ "$status" != "404" ]; then
+            echo "Expected 404 for mismatched customer/order, received $status"
+            cat /tmp/mismatch.json
+            exit 1
+          fi
+
+          echo "Customer/order ownership validation passed."
+
+          echo "Testing unauthenticated admin access..."
+
+          status=$(curl --silent --output /tmp/admin-unauth.json \
+            --write-out "%{http_code}" \
+            "$BASE_URL/refunds")
+
+          if [ "$status" != "401" ]; then
+            echo "Expected 401 for unauthenticated admin request, received $status"
+            cat /tmp/admin-unauth.json
+            exit 1
+          fi
+
+          echo "Admin authentication protection passed."
+
       - name: Check backend HTTP health
         run: |
           for i in {1..30}; do
