@@ -22,7 +22,7 @@ jobs:
       OPENAI_MODEL: gpt-4o-mini
       ADMIN_EMAIL: admin@example.com
       ADMIN_PASSWORD: CI_Test_Admin_Password_123!
-      JWT_SECRET: ci_test_jwt_secret_change_me_12345678901234567890
+      JWT_SECRET: ci_test_jwt_secret_change_me_1234567890123456789012345678901234567890
 
     steps:
       - name: Checkout repository
