@@ -215,6 +215,182 @@ jobs:
 
           echo "Admin authentication protection passed."
 
+      - name: Test authenticated admin review workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="http://localhost:5000/api"
+          COOKIE_JAR="/tmp/refundiq-admin-cookies.txt"
+
+          echo "Testing admin login..."
+
+          login_status=$(curl --silent --show-error \
+            --cookie-jar "$COOKIE_JAR" \
+            --output /tmp/admin-login.json \
+            --write-out "%{http_code}" \
+            -X POST "$BASE_URL/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg email "$ADMIN_EMAIL" \
+              --arg password "$ADMIN_PASSWORD" \
+              '{email:$email,password:$password}')")
+
+          if [ "$login_status" != "200" ]; then
+            echo "Admin login failed: HTTP $login_status"
+            cat /tmp/admin-login.json
+            exit 1
+          fi
+
+          echo "Admin login passed."
+
+          echo "Testing authenticated session..."
+
+          me_status=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --output /tmp/admin-me.json \
+            --write-out "%{http_code}" \
+            "$BASE_URL/auth/me")
+
+          if [ "$me_status" != "200" ]; then
+            echo "Expected HTTP 200 from /auth/me, received $me_status"
+            cat /tmp/admin-me.json
+            exit 1
+          fi
+
+          echo "Authenticated session passed."
+
+          echo "Retrieving refund requests..."
+
+          list_status=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --output /tmp/admin-refunds.json \
+            --write-out "%{http_code}" \
+            "$BASE_URL/refunds")
+
+          if [ "$list_status" != "200" ]; then
+            echo "Expected HTTP 200 from refund list, received $list_status"
+            cat /tmp/admin-refunds.json
+            exit 1
+          fi
+
+          refund_id=$(jq -r \
+            '.data[] | select(.orderNumber == "RFQ-002-01") | .id' \
+            /tmp/admin-refunds.json | head -n1)
+
+          if [ -z "$refund_id" ]; then
+            echo "Could not find the escalated refund request."
+            cat /tmp/admin-refunds.json
+            exit 1
+          fi
+
+          echo "Found escalated refund: $refund_id"
+
+          echo "Testing admin review..."
+
+          review_status=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --output /tmp/admin-review.json \
+            --write-out "%{http_code}" \
+            -X PATCH "$BASE_URL/refunds/$refund_id/review" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "decision":"APPROVED",
+              "reviewNotes":"CI integration test review."
+            }')
+
+          if [ "$review_status" != "200" ]; then
+            echo "Expected HTTP 200 from review, received $review_status"
+            cat /tmp/admin-review.json
+            exit 1
+          fi
+
+          review_decision=$(jq -r '.data.status' /tmp/admin-review.json)
+
+          if [ "$review_decision" != "APPROVED" ]; then
+            echo "Expected APPROVED, received $review_decision"
+            cat /tmp/admin-review.json
+            exit 1
+          fi
+
+          echo "Admin review passed."
+
+          echo "Checking persisted review and audit history..."
+
+          detail_status=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --output /tmp/admin-detail.json \
+            --write-out "%{http_code}" \
+            "$BASE_URL/refunds/$refund_id")
+
+          if [ "$detail_status" != "200" ]; then
+            echo "Expected HTTP 200 from refund detail, received $detail_status"
+            cat /tmp/admin-detail.json
+            exit 1
+          fi
+
+          jq -e '
+            .data.status == "APPROVED"
+            and .data.reviewedByAdmin != null
+            and (.data.auditLogs | any(.action == "REFUND_REQUEST_REVIEWED"))
+          ' /tmp/admin-detail.json > /dev/null
+
+          echo "Review persistence and audit history passed."
+
+          echo "Testing review conflict for non-escalated request..."
+
+          normal_refund_id=$(jq -r \
+            '.data[] | select(.orderNumber == "RFQ-001-01") | .id' \
+            /tmp/admin-refunds.json | head -n1)
+
+          conflict_status=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --output /tmp/review-conflict.json \
+            --write-out "%{http_code}" \
+            -X PATCH "$BASE_URL/refunds/$normal_refund_id/review" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "decision":"DENIED",
+              "reviewNotes":"Should not be allowed."
+            }')
+
+          if [ "$conflict_status" != "409" ]; then
+            echo "Expected HTTP 409, received $conflict_status"
+            cat /tmp/review-conflict.json
+            exit 1
+          fi
+
+          echo "Non-escalated review protection passed."
+
+          echo "Testing logout..."
+
+          logout_status=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --cookie-jar "$COOKIE_JAR" \
+            --output /tmp/admin-logout.json \
+            --write-out "%{http_code}" \
+            -X POST "$BASE_URL/auth/logout")
+
+          if [ "$logout_status" != "200" ]; then
+            echo "Expected HTTP 200 from logout, received $logout_status"
+            cat /tmp/admin-logout.json
+            exit 1
+          fi
+
+          after_logout=$(curl --silent --show-error \
+            --cookie "$COOKIE_JAR" \
+            --output /tmp/admin-after-logout.json \
+            --write-out "%{http_code}" \
+            "$BASE_URL/auth/me")
+
+          if [ "$after_logout" != "401" ]; then
+            echo "Expected HTTP 401 after logout, received $after_logout"
+            cat /tmp/admin-after-logout.json
+            exit 1
+          fi
+
+          echo "Logout and session invalidation passed."
+
       - name: Check backend HTTP health
         run: |
           for i in {1..30}; do

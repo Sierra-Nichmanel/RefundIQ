@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -158,6 +159,43 @@ async function main() {
 
     console.log(`Seeded ${email}`);
   }
+
+  // Create or update the admin account for the environment.
+  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminEmail || !adminPassword) {
+    throw new Error(
+      "ADMIN_EMAIL and ADMIN_PASSWORD must be set before seeding.",
+    );
+  }
+
+  if (adminPassword.length < 12 || adminPassword.length > 128) {
+    throw new Error("ADMIN_PASSWORD must be between 12 and 128 characters.");
+  }
+
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
+
+  await prisma.admin.upsert({
+    where: {
+      email: adminEmail,
+    },
+    create: {
+      firstName: "CI",
+      lastName: "Administrator",
+      email: adminEmail,
+      passwordHash,
+      role: "ADMIN",
+      isActive: true,
+    },
+    update: {
+      passwordHash,
+      role: "ADMIN",
+      isActive: true,
+    },
+  });
+
+  console.log(`Seeded admin account: ${adminEmail}`);
 
   const customerCount = await prisma.customer.count();
   const orderCount = await prisma.order.count();
