@@ -79,6 +79,42 @@ jobs:
           docker compose logs backend
           exit 1
 
+      - name: Check backend HTTP health
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent \
+              http://localhost:5000/api/health; then
+              echo ""
+              echo "Backend HTTP health check passed"
+              exit 0
+            fi
+
+            echo "Waiting for backend HTTP endpoint..."
+            sleep 2
+          done
+
+          echo "Backend HTTP health check failed"
+          docker compose logs backend
+          exit 1
+
+      - name: Check frontend HTTP availability
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent \
+              http://localhost:5173/ \
+              -o /dev/null; then
+              echo "Frontend HTTP check passed"
+              exit 0
+            fi
+
+            echo "Waiting for frontend..."
+            sleep 2
+          done
+
+          echo "Frontend HTTP check failed"
+          docker compose logs frontend
+          exit 1
+
       - name: Show service status
         if: always()
         run: docker compose ps
